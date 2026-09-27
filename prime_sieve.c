@@ -28,8 +28,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
+#include <errno.h>
 
 /* Bit-manipulation macros: track only odd numbers.
  * Bit index i represents the odd number (2*i + 3).
@@ -46,7 +46,7 @@ static unsigned char *sieve_primes(long limit, long *bit_count_out)
 
     /* Only odd numbers >= 3 are tracked: count = (limit - 3) / 2 + 1 */
     long bit_count = (limit - 3) / 2 + 1;
-    long byte_count = (bit_count / 8) + 1;
+    long byte_count = (bit_count + 7) / 8;
 
     unsigned char *composite = (unsigned char *)calloc((size_t)byte_count, 1);
     if (!composite) {
@@ -54,17 +54,32 @@ static unsigned char *sieve_primes(long limit, long *bit_count_out)
         exit(EXIT_FAILURE);
     }
 
-    for (long p = 3; p * p <= limit; p += 2) {
+    for (long p = 3; p <= limit / p; p += 2) {
         long p_index = (p - 3) / 2;
+
         if (BIT_TEST(composite, p_index)) {
             continue; /* p is not prime, skip */
         }
+
         /* Mark odd multiples of p starting at p*p */
-        for (long multiple = p * p; multiple <= limit; multiple += 2 * p) {
+        long multiple = p * p;
+        long step = 2 * p;
+
+        for (;;) {
             long m_index = (multiple - 3) / 2;
             BIT_SET(composite, m_index);
+
+            if (multiple > limit - step) {
+                break;
+            }
+
+            multiple += step;
         }
     }
+
+    *bit_count_out = bit_count;
+    return composite;
+}
 
     *bit_count_out = bit_count;
     return composite;
@@ -75,12 +90,17 @@ int main(int argc, char *argv[])
     long limit = 1000000L; /* default: 1 million */
 
     if (argc > 1) {
-        limit = atol(argv[1]);
-        if (limit < 2) {
-            fprintf(stderr, "Usage: %s <upper_bound >= 2>\n", argv[0]);
-            return EXIT_FAILURE;
-        }
+    char *end = NULL;
+
+    errno = 0;
+    limit = strtol(argv[1], &end, 10);
+
+    if (errno != 0 || end == argv[1] || *end != '\0' || limit < 2) {
+        fprintf(stderr, "Usage: %s <upper_bound >= 2>\n", argv[0]);
+        return EXIT_FAILURE;
     }
+}
+
 
     clock_t start = clock();
 
